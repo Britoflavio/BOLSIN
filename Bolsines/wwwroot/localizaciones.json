@@ -1,0 +1,28 @@
+[
+  {
+    "type": "Feature",
+    "geometry": {
+      "type": "Point",
+      "coordinates": [
+        -66.08443874980354,
+        -24.044932389498083
+      ]
+    },
+    "properties": {
+      "name": "Bols\u00EDn 1"
+    }
+  },
+  {
+    "type": "Feature",
+    "geometry": {
+      "type": "Point",
+      "coordinates": [
+        -66.03066721378205,
+        -32.704603912165865
+      ]
+    },
+    "properties": {
+      "name": "Bols\u00EDn 4"
+    }
+  }
+]

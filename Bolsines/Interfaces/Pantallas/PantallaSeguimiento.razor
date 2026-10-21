@@ -1,0 +1,271 @@
+﻿@using Bolsines.Controlador
+@using Bolsines.Entidades
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime JsRuntime
+@inject NavigationManager NavigationManager
+@page "/seguimiento"
+
+<PageTitle>Seguimiento de Bolsines</PageTitle>
+
+@if (estaHabilitada)
+{
+    <h1 style="text-align: center; margin-bottom: 15px;">
+        Seguimiento de Bolsines
+    </h1>
+    <h3 style="text-align: center; margin: 15px auto;">
+        @txtCMUsuario
+    </h3>
+    <div @ref="mapBolsinesEnviados" id="map"
+         style="width: 800px; height: 600px; margin: 15px auto; border: 4px solid #5284c8; border-radius: 16px;">
+    </div>
+    <div style="width: 800px; margin: 15px 220px; text-align: left;">
+        <label style="color: #5284c8; margin-bottom: 7.5px;">
+            @lblSeleccionBolsinMapa
+        </label>
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <select @onchange="OnSeleccionarBolsin"
+                    style="width: 188.75px; height: 50px; background-color: #ecf6fd; color: #5284c8; border-radius: 8px; padding-left: 12.5px;">
+                <option value="" disabled selected hidden>Número de bolsín</option>
+                @if (cmbBolsinesMapa != null)
+                {
+                    @foreach (var bolsin in cmbBolsinesMapa)
+                    {
+                        <option value="@bolsin.numero" style="color: #5284c8;">
+                            Bolsín @bolsin.numero
+                        </option>
+                    }
+                }
+            </select>
+
+            @if (btnConfirmarEnvioMail)
+            {
+                <button @onclick="tomarConfirmacion"
+                        style="width: 188.75px; height: 50px; background-color: #5284c8; color: #d0e9fa; border: none; text-align: center; border-radius: 8px; cursor: pointer;">
+                    Notificar Ubicación
+                </button>
+            }
+
+                <button @onclick="IrAlMenuPrincipal"
+                    style="width: 188.75px; height: 50px; background-color: #b63321; color: #d0e9fa; border: none; text-align: center; border-radius: 8px; cursor: pointer; margin-left: auto;">
+                    Menú Principal
+                </button>           
+        </div>
+
+        @if (mostrarPreguntaNotificacion)
+        {
+            <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;">
+                <div style="background-color: #fef7d6; padding: 15px; border-radius: 8px; width: 400px; text-align: center; filter: drop-shadow(0px 0px 15px rgba(0, 0, 0, 0.3));">
+                    <h5 style="color: #c9ab2a; text-align: left;">Confirmar Notificación</h5>
+                    <p style="color: #333; text-align: left">
+                        ¿Desea enviar la notificación con la ubicación del bolsín?
+                    </p>
+                    <div style="display: flex; justify-content: flex-end; gap: 15px; margin-top: 15px;">
+                        <button @onclick="() => ResponderPregunta(true)"
+                                style="padding: 10px 25px; background-color: #9dac78; color: #fef7d6; border: none; border-radius: 8px; cursor: pointer;">
+                            Confirmar
+                        </button>
+                        <button @onclick="() => ResponderPregunta(false)"
+                                style="padding: 10px 25px; background-color: #b63321; color: #fef7d6; border: none; border-radius: 8px; cursor: pointer;">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (mostrarMensajeNotificacion)
+        {
+            <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;">
+                <div style="background-color: #edf3e0; padding: 15px; border-radius: 8px; width: 400px; text-align: center; filter: drop-shadow(0px 0px 15px rgba(0, 0, 0, 0.3));">
+                    <h5 style="color: #9dac78; text-align: left;">Notificación Enviada</h5>
+                    <p style="color: #333; text-align: left">
+                        El gerente de la comisión médica de destino fue notificado sobre la
+                        ubicación del bolsín seleccionado.
+                    </p>
+                    <div style="display: flex; justify-content: flex-end;">
+                        <button @onclick="CerrarVentanaInformacion"
+                                style="padding: 10px 25px; margin-top: -0.5px; background-color: #9dac78; color: #edf3e0; border: none; border-radius: 8px; cursor: pointer;">
+                            Aceptar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    // Atributos del componente
+    private IJSObjectReference? moduloJS;
+    private string? resultadoJS;
+    private bool estaHabilitada = false;
+    private bool mapaEstaCargado = false;
+    private bool mostrarPreguntaNotificacion = false;
+    private TaskCompletionSource<bool>? senalBotonConfirmar;
+    private bool mostrarMensajeNotificacion = false;
+
+    // Métodos del componente
+    protected override void OnInitialized()
+    {
+        this.opcionConsultarUbicacionBolsines();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (estaHabilitada && !mapaEstaCargado)
+        {
+            mapaEstaCargado = true;
+
+            var cliente = new HttpClient();
+            var localizaciones = await cliente.GetStringAsync(
+                "http://localhost:5082/localizaciones.json"
+            );
+            localizaciones = localizaciones.Replace("\n", " ");
+
+            moduloJS = await JsRuntime.InvokeAsync<IJSObjectReference>(
+                "import",
+                "./mapaLeaflet.js"
+            );
+
+            if (moduloJS is not null)
+            {
+                resultadoJS = await moduloJS.InvokeAsync<string>(
+                    "cargarMapa",
+                    Convert.ToString(localizaciones)
+                );
+            }
+        }
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        if (moduloJS is not null)
+        {
+            try
+            {
+                await moduloJS.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // La comunicación entre el navegador y el módulo JS ya no existe.
+                // No hace falta hacer nada más.
+            }
+        }
+    }
+
+    private void OnSeleccionarBolsin(ChangeEventArgs e)
+    {
+        if (
+            int.TryParse(e.Value?.ToString(), out int numeroSeleccionado)
+            && this.cmbBolsinesMapa is not null
+        )
+        {
+            var bolsinSeleccionado = this.cmbBolsinesMapa.FirstOrDefault(bolsinDeMapa =>
+                bolsinDeMapa.numero == numeroSeleccionado
+            );
+
+            if (bolsinSeleccionado.bolsin is not null)
+            {
+                this.tomarSeleccionBolsin(bolsinSeleccionado);
+            }
+        }
+    }
+
+    private void ResponderPregunta(bool confirmado)
+    {
+        this.mostrarPreguntaNotificacion = false;
+        this.senalBotonConfirmar?.SetResult(confirmado);
+    }
+
+    private void CerrarVentanaInformacion()
+    {
+        this.mostrarMensajeNotificacion = false;
+        this.controladorSeguimiento.ConfirmacionAceptada();
+    }
+
+    private void IrAlMenuPrincipal()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+
+    // Atributos
+    private string txtCMUsuario;
+    private ElementReference mapBolsinesEnviados;
+    private string lblSeleccionBolsinMapa;
+    private List<(
+        Bolsin bolsin,
+        int numero,
+        (double latitud, double longitud) ubicacion,
+        DateTime fechaHoraUbicacion
+    )> cmbBolsinesMapa = new();
+    private bool btnConfirmarEnvioMail;
+    private ControladorSeguimiento controladorSeguimiento;
+
+    // Métodos
+    public void opcionConsultarUbicacionBolsines()
+    {
+        this.habilitarPantalla();
+        this.controladorSeguimiento = new ControladorSeguimiento(this, NavigationManager);
+        this.controladorSeguimiento.nuevoSeguimientoBolsines();
+    }
+
+    public void habilitarPantalla()
+    {
+        this.estaHabilitada = true;
+    }
+
+    public void mostrarCMUsuarioLogueado(string nombreCM, string codigoCM)
+    {
+        this.txtCMUsuario = $"{nombreCM} ({codigoCM})";
+    }
+
+    public void pedirSeleccionBolsin(
+            List<(
+                Bolsin bolsin,
+                int numeroBolsin,
+                (double latitud, double longitud) ubicacion,
+                DateTime fechaHoraUbicacion
+            )> localizacionBolsines
+        )
+    {
+        this.lblSeleccionBolsinMapa = "Seleccione un bolsín:";
+        this.cmbBolsinesMapa = localizacionBolsines;
+    }
+
+    public void tomarSeleccionBolsin(
+        (
+            Bolsin bolsin,
+            int numero,
+            (double latitud, double longitud) ubicacion,
+            DateTime fechaHoraUbicacion
+        ) bolsinSeleccionado
+    )
+    {
+        this.controladorSeguimiento.tomarSeleccionBolsin(bolsinSeleccionado);
+    }
+
+    public void solicitarConfirmacionEnvioMail()
+    {
+        this.btnConfirmarEnvioMail = true;
+    }
+
+    public async Task tomarConfirmacion()
+    {
+        this.mostrarPreguntaNotificacion = true;
+        this.senalBotonConfirmar = new TaskCompletionSource<bool>();
+
+        var usuarioConfirmo = await this.senalBotonConfirmar.Task;
+
+        if (usuarioConfirmo)
+        {
+            await this.controladorSeguimiento.tomarConfirmacion();
+        }
+    }
+
+    public void informarEnvioMail()
+    {
+        this.mostrarMensajeNotificacion = true;
+    }
+}

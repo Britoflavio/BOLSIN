@@ -1,0 +1,31 @@
+﻿@using Bolsines.Datos_Prueba
+@using Bolsines.Entidades
+@using Microsoft.AspNetCore.Components.Web
+@page "/"
+
+<PageTitle>Menú Principal</PageTitle>
+
+<div style="text-align: center; margin-top: 160px">
+    <h1>Hola, @nombreEmpleadoLogueado</h1>
+    <img src="bolsines_v2.png" style="width: 600px; height: 432px; filter: drop-shadow(0px 0px 15px rgba(0, 0, 0, 0.3));" />
+</div>
+
+@code {
+    private string nombreEmpleadoLogueado;
+
+    protected override void OnInitialized()
+    {
+		var empleados = DatosPrueba.cargarEmpleados();
+        var sesionActual = DatosPrueba.cargarSesionActual();
+        var usuarioLogueado = sesionActual.getUsuario();
+
+        foreach (Empleado empleado in empleados)
+        {
+            if (empleado.esTuUsuario(usuarioLogueado))
+            {
+                this.nombreEmpleadoLogueado = empleado.getNombre();
+                break;
+            }
+        }
+    }
+}
